@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * =========================
+ * Core models (existing)
+ * =========================
+ */
+
+model Appointment {
+  id              String   @id @default(uuid()) @db.Uuid
+  requestedStart  DateTime @map("requested_start") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  sourceMessageId String   @unique @map("source_message_id")
+  customerName    String   @map("customer_name")
+  customerEmail   String   @map("customer_email")
+  locale          String   @map("locale")
+  status          String   @default("pending")
+
+  // Public share handle for read-only views
+  shareId String? @unique @map("share_id")
+
+  @@index([requestedStart], map: "idx_appointments_requested_start")
+  @@index([status, requestedStart], map: "idx_appointments_status_start")
+  @@index([createdAt], map: "idx_appointments_created_at")
+  @@map("appointments")
+}
+
+enum PropertyStatus {
+  active
+  pending
+  draft
+}
+
+model Property {
+  id           String         @id @default(cuid())
+  title        String
+  city         String?
+  address      String?
+  priceMonthly Int?
+  status       PropertyStatus @default(draft)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model AppSettings {
+  id           String   @id @default(cuid())
+  orgName      String?
+  supportEmail String?
+  brandPrimary String   @default("#7C5CFF")
+  brandLime    String   @default("#D1FF25")
+  brandCard    String   @default("#0B0B0C")
+  timezone     String   @default("UTC")
+  dailyDigest  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/**
+ * =========================
+ * Document trust models
+ * =========================
+ */
+
+model Document {
+  id         String   @id @default(cuid())
+  ownerEmail String
+  filename   String
+  storageKey String   @unique // e.g. "docs/abc.pdf" (S3 or local)
+  totpSecret String // rotating code seed
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  shares DocumentShare[]
+  views  DocumentView[]  @relation("DocumentToViews")
+}
+
+model DocumentShare {
+  id             String   @id @default(cuid())
+  documentId     String
+  recipientEmail String
+  expiresAt      DateTime
+  canDownload    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  document Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  views    DocumentView[] @relation("ShareToViews")
+
+  @@index([documentId])
+  @@index([recipientEmail])
+}
+
+model DocumentView {
+  id          String   @id @default(cuid())
+  documentId  String
+  shareId     String
+  viewerEmail String
+  viewedAt    DateTime @default(now())
+  ip          String?
+  userAgent   String?
+  codeShown   String // rotating code at view time
+
+  document Document      @relation("DocumentToViews", fields: [documentId], references: [id], onDelete: Cascade)
+  share    DocumentShare @relation("ShareToViews", fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([shareId])
+  @@index([viewerEmail])
+}
+
+/**
+ * =========================
+ * Listings + analytics
+ * =========================
+ */
+
+enum ListingStatus {
+  published
+  draft
+  archived
+}
+
+model Listing {
+  id           String        @id @default(cuid())
+  title        String
+  city         String?
+  address      String?
+  priceMonthly Int?
+  url          String?       @unique // optional: guards duplicate canonical pages
+  externalId   String?
+  status       ListingStatus @default(published)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  channels ListingChannel[]
+  events   ListingEvent[]
+  leads    Lead[]
+
+  @@index([status, createdAt], map: "idx_listing_status_created")
+}
+
+enum ChannelStatus {
+  active
+  paused
+  archived
+}
+
+model ListingChannel {
+  id         String        @id @default(cuid())
+  listingId  String
+  platform   String // e.g., "Zillow", "SeLoger", "FB", "Custom"
+  externalId String?
+  url        String
+  status     ChannelStatus @default(active)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt // helpful for sync/audits
+
+  listing Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  events  ListingEvent[] @relation("ChannelToEvents")
+
+  @@unique([platform, externalId], map: "uniq_channel_platform_external")
+  @@index([listingId], map: "idx_channel_listing")
+}
+
+enum EventType {
+  view
+  lead_click
+  contact_click
+  download
+  share_open
+  share_download
+  favorite
+}
+
+model ListingEvent {
+  id         String    @id @default(cuid())
+  listingId  String
+  channelId  String? // optional; event may be on the canonical listing
+  type       EventType
+  occurredAt DateTime  @default(now())
+  ip         String?
+  userAgent  String?
+  referer    String?
+
+  // attribution
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  sessionId   String?
+
+  listing Listing         @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  channel ListingChannel? @relation("ChannelToEvents", fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([listingId, occurredAt], map: "idx_event_listing_time")
+  @@index([type, occurredAt], map: "idx_event_type_time")
+  @@index([channelId, occurredAt], map: "idx_event_channel_time") // fast channel filters
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  listingId String
+  name      String?
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, createdAt], map: "idx_lead_listing_time")
+}
+// ---------------- Market-wide scraped data ----------------
+model MarketListing {
+  id         String   @id @default(cuid())
+  portal     String              // e.g. "SeLoger", "Leboncoin", "BienIci"
+  externalId String?             // if you have a stable ID from the portal
+  url        String   @db.Text
+  title      String
+  city       String?
+  price      Int?
+  surfaceM2  Float?
+  rooms      Int?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([portal], map: "idx_market_portal")
+  @@index([city], map: "idx_market_city")
+  @@index([createdAt], map: "idx_market_created")
+  @@unique([portal, externalId], map: "uniq_market_portal_extid")
+}

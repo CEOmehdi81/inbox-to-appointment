@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* --- Theme tokens --- */
+:root {
+  --brand-primary: #7C5CFF; /* purple accent */
+  --brand-lime:    #D1FF25; /* neon lime */
+  --brand-card:    #111315; /* dark card */
+  --brand-panel:   #0B0C0D; /* page background */
+}
+
+/* --- Base --- */
+html, body, :root { height: 100%; }
+body {
+  /* background + text color so you can *see* Tailwind working */
+  @apply bg-[color:var(--brand-panel)] text-white antialiased;
+}
+
+/* --- Simple table helpers (used on the appointments page) --- */
+.table { @apply w-full border-separate border-spacing-0; }
+.table th { @apply text-left text-xs uppercase tracking-wide text-gray-400 border-b border-white/10 p-3; }
+.table td { @apply p-3 border-b border-white/5; }
+.table tr:nth-child(even) { @apply bg-white/5; }

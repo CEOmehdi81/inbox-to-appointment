@@ -1,0 +1,21 @@
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional base styles for the dark dashboard look */
+:root { color-scheme: dark; }
+
+html, body, #__next, :root { height: 100%; }
+
+body {
+  @apply bg-panel text-white antialiased;
+}
+
+/* Simple card + panel helpers we'll use soon */
+.card {
+  @apply rounded-2xl bg-card/80 backdrop-blur p-5 shadow-[0_1px_2px_0_rgba(0,0,0,0.35),_0_8px_24px_-8px_rgba(0,0,0,0.45)];
+}
+.panel {
+  @apply rounded-2xl bg-card/60 backdrop-blur p-5;
+}
