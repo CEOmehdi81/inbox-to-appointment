@@ -1,0 +1,37 @@
+// app/admin/listings/_stats.ts
+import prisma from '@/lib/prisma';
+
+export async function getListingStats(listingId: string) {
+  // totals by type
+  const grouped = await prisma.listingEvent.groupBy({
+    by: ['type'],
+    where: { listingId },
+    _count: true,
+  });
+
+  const totals = Object.fromEntries(grouped.map(g => [g.type, g._count]));
+  const total = grouped.reduce((n, g) => n + g._count, 0);
+
+  // last 25 events
+  const recent = await prisma.listingEvent.findMany({
+    where: { listingId },
+    orderBy: { occurredAt: 'desc' },
+    take: 25,
+    select: {
+      occurredAt: true,
+      type: true,
+      channelId: true,
+      utmSource: true,
+      utmMedium: true,
+      utmCampaign: true,
+      referer: true,
+      ip: true,
+      userAgent: true,
+    },
+  });
+
+  // lead count
+  const leadCount = await prisma.lead.count({ where: { listingId } });
+
+  return { total, totals, leadCount, recent };
+}

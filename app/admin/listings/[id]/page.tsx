@@ -76,6 +76,19 @@ export default async function ListingDetail({
 
   if (!listing) return notFound();
 
+  // --- STATS (totals by type + lead count) ---
+  const [grouped, leadCount] = await Promise.all([
+    prisma.listingEvent.groupBy({
+      by: ['type'],
+      where: { listingId: params.id },
+      _count: true,
+    }),
+    prisma.lead.count({ where: { listingId: params.id } }),
+  ]);
+  const totals = Object.fromEntries(grouped.map((g) => [g.type, g._count])) as Record<string, number>;
+  const totalEvents = grouped.reduce((n, g) => n + g._count, 0);
+  const totalClicks = (totals['lead_click'] ?? 0) + (totals['contact_click'] ?? 0);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -112,6 +125,14 @@ export default async function ListingDetail({
           </button>
         </form>
       </div>
+
+      {/* --- NEW: Quick stats --- */}
+      <section className="grid md:grid-cols-4 gap-3">
+        <Stat label="Total events" value={totalEvents} />
+        <Stat label="Leads" value={leadCount} />
+        <Stat label="Views" value={totals['view'] ?? 0} />
+        <Stat label="Clicks" value={totalClicks} />
+      </section>
 
       {/* Channels */}
       <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
@@ -203,16 +224,25 @@ export default async function ListingDetail({
         </div>
       </div>
 
-      {/* Tracker snippet (we'll wire endpoint next) */}
+      {/* Tracker snippet */}
       <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
-        <h3 className="text-sm font-semibold mb-2">Tracker embed (coming next)</h3>
+        <h3 className="text-sm font-semibold mb-2">Tracker embed</h3>
         <p className="text-xs text-gray-400 mb-2">
-          We’ll expose <code>/api/track</code> next. You’ll paste this snippet on your public listing page(s) to record real views and clicks:
+          Paste this on your public listing page(s) to record real views and clicks:
         </p>
         <pre className="text-xs bg-black/30 p-3 rounded overflow-x-auto">
 {`<script async src="/api/track.js?listing=${listing.id}"></script>`}
         </pre>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded border border-white/10 bg-[color:var(--brand-card)] p-3">
+      <div className="text-xs text-gray-400">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
     </div>
   );
 }

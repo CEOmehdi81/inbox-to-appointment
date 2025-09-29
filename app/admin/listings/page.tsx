@@ -1,10 +1,11 @@
 // app/admin/listings/page.tsx
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import LivePanel from './_live-panel';
 
 export const dynamic = 'force-dynamic';
 
-// Optional absolute base (set in .env.local as NEXT_PUBLIC_APP_URL="https://your-domain.com")
+// Optional absolute base (NEXT_PUBLIC_APP_URL="https://your-domain.com")
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? '';
 
 /* ------------ server actions ------------ */
@@ -81,11 +82,9 @@ async function setStatus(formData: FormData) {
 
 /* ------------ page ------------ */
 export default async function ListingsPage() {
-  // Defensive fetch: don’t crash if the table doesn’t exist yet
   let listings:
-    | Array<
-        Awaited<ReturnType<typeof prisma.listing.findFirst>>
-      > = [];
+    | Array<Awaited<ReturnType<typeof prisma.listing.findFirst>>>
+    = [];
 
   let dbReady = true;
 
@@ -93,7 +92,7 @@ export default async function ListingsPage() {
     listings = await prisma.listing.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        channels: true, // <-- we will surface short links for these
+        channels: true,
         _count: { select: { events: true, leads: true, channels: true } },
       },
     });
@@ -103,42 +102,22 @@ export default async function ListingsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Globe + cards */}
+      <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
+        <LivePanel />
+      </div>
+
       {/* Create */}
       <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
         <h2 className="text-lg font-semibold mb-3">Create listing</h2>
         <form action={createListing} className="grid md:grid-cols-6 gap-3">
-          <input
-            name="title"
-            placeholder="Title *"
-            required
-            className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-2"
-          />
-          <input
-            name="city"
-            placeholder="City"
-            className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
-          />
-          <input
-            name="address"
-            placeholder="Address"
-            className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-2"
-          />
-          <input
-            name="priceMonthly"
-            type="number"
-            min="0"
-            placeholder="Price / month"
-            className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm"
-          />
-          <input
-            name="url"
-            placeholder="Canonical URL (optional)"
-            className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-5"
-          />
-          <button className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm hover:bg-white/10 md:col-span-1">
-            Create
-          </button>
+          <input name="title" placeholder="Title *" required className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-2" />
+          <input name="city" placeholder="City" className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm" />
+          <input name="address" placeholder="Address" className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-2" />
+          <input name="priceMonthly" type="number" min="0" placeholder="Price / month" className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm" />
+          <input name="url" placeholder="Canonical URL (optional)" className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm md:col-span-5" />
+          <button className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm hover:bg-white/10 md:col-span-1">Create</button>
         </form>
       </div>
 
@@ -150,8 +129,7 @@ export default async function ListingsPage() {
 
         {!dbReady ? (
           <div className="p-4 text-sm text-amber-300">
-            The database doesn’t have the <code>Listing</code> tables yet.
-            Run your migrations, then refresh:
+            The database doesn’t have the <code>Listing</code> tables yet. Run your migrations, then refresh:
             <pre className="mt-2 rounded bg-white/5 p-2 text-xs">
               npx prisma generate{'\n'}npx prisma migrate dev -n init_listings
             </pre>
@@ -174,18 +152,14 @@ export default async function ListingsPage() {
               <tbody>
                 {listings.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
-                      No listings yet.
-                    </td>
+                    <td colSpan={8} className="px-4 py-10 text-center text-gray-400">No listings yet.</td>
                   </tr>
                 )}
 
                 {listings.map((l: any, i: number) => (
                   <tr key={l.id} className={i % 2 ? 'bg-white/[0.02]' : ''}>
                     <td className="px-4 py-3">
-                      <a href={`/admin/listings/${l.id}`} className="text-blue-400 hover:underline">
-                        {l.title}
-                      </a>
+                      <a href={`/admin/listings/${l.id}`} className="text-blue-400 hover:underline">{l.title}</a>
                     </td>
                     <td className="px-4 py-3 text-gray-300">{l.city || '-'}</td>
                     <td className="px-4 py-3">
@@ -206,93 +180,37 @@ export default async function ListingsPage() {
                     <td className="px-4 py-3">{l._count?.events ?? 0}</td>
                     <td className="px-4 py-3">{l._count?.leads ?? 0}</td>
                     <td className="px-4 py-3 text-gray-400">
-                      {new Date(l.createdAt).toLocaleString(undefined, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
+                      {new Date(l.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-3">
-                        {/* Quick add channel */}
                         <form action={addChannel} className="flex flex-wrap items-center gap-2">
                           <input type="hidden" name="listingId" value={l.id} />
-                          <input
-                            name="platform"
-                            placeholder="Platform"
-                            className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs"
-                          />
-                          <input
-                            name="externalId"
-                            placeholder="External ID (opt.)"
-                            className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs"
-                          />
-                          <input
-                            name="channelUrl"
-                            placeholder="Channel URL"
-                            className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs w-64"
-                          />
+                          <input name="platform" placeholder="Platform" className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs" />
+                          <input name="externalId" placeholder="External ID (opt.)" className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs" />
+                          <input name="channelUrl" placeholder="Channel URL" className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs w-64" />
                           <button className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs hover:bg-white/10">
                             Add channel
                           </button>
                         </form>
 
-                        {/* SURFACE SHORT LINKS FOR EXISTING CHANNELS */}
                         {Array.isArray(l.channels) && l.channels.length > 0 && (
                           <div className="space-y-1">
                             {l.channels.map((s: any) => (
-                              <div
-                                key={s.id}
-                                className="flex flex-wrap items-center gap-2 text-xs text-gray-300"
-                              >
-                                {/* Platform label */}
-                                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
-                                  {s.platform}
-                                </span>
-
-                                {/* Source URL */}
-                                <a
-                                  href={s.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="rounded bg-white/5 border border-white/10 px-2 py-1 hover:bg-white/10"
-                                >
-                                  Source
-                                </a>
-
-                                {/* Short link (relative) */}
-                                <code className="bg-white/5 border border-white/10 rounded px-2 py-1">
-                                  /r/{s.id}
-                                </code>
-
-                                {/* Absolute link (if NEXT_PUBLIC_APP_URL provided) */}
-                                {BASE_URL && (
-                                  <code className="bg-white/5 border border-white/10 rounded px-2 py-1">
-                                    {BASE_URL}/r/{s.id}
-                                  </code>
-                                )}
-
-                                {/* Quick test */}
-                                <a
-                                  href={`/r/${s.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="rounded bg-white/5 border border-white/10 px-2 py-1 hover:bg-white/10"
-                                >
-                                  Test redirect
-                                </a>
+                              <div key={s.id} className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+                                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{s.platform}</span>
+                                <a href={s.url} target="_blank" rel="noopener noreferrer" className="rounded bg-white/5 border border-white/10 px-2 py-1 hover:bg-white/10">Source</a>
+                                <code className="bg-white/5 border border-white/10 rounded px-2 py-1">/r/{s.id}</code>
+                                {BASE_URL && <code className="bg-white/5 border border-white/10 rounded px-2 py-1">{BASE_URL}/r/{s.id}</code>}
+                                <a href={`/r/${s.id}`} target="_blank" rel="noopener noreferrer" className="rounded bg-white/5 border border-white/10 px-2 py-1 hover:bg-white/10">Test redirect</a>
                               </div>
                             ))}
                           </div>
                         )}
 
-                        {/* Publish/Archive */}
                         <form action={setStatus} className="inline">
                           <input type="hidden" name="listingId" value={l.id} />
-                          <input
-                            type="hidden"
-                            name="status"
-                            value={l.status === 'archived' ? 'published' : 'archived'}
-                          />
+                          <input type="hidden" name="status" value={l.status === 'archived' ? 'published' : 'archived'} />
                           <button className="rounded bg-white/5 border border-white/10 px-2 py-1 text-xs hover:bg-white/10">
                             {l.status === 'archived' ? 'Unarchive' : 'Archive'}
                           </button>

@@ -1,71 +1,58 @@
-// app/api/track/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { EventType } from '@prisma/client';
+// app/api/track.js/route.ts
+import { NextResponse, NextRequest } from 'next/server';
 
-function getClientMeta(req: NextRequest) {
-  const h = req.headers;
-  const ip = (h.get('x-forwarded-for') || '').split(',')[0]?.trim() || '';
-  const userAgent = h.get('user-agent') || '';
-  const referer = h.get('referer') || '';
-  const u = new URL(req.url);
-  return {
-    ip, userAgent, referer,
-    utmSource: u.searchParams.get('utm_source') || undefined,
-    utmMedium: u.searchParams.get('utm_medium') || undefined,
-    utmCampaign: u.searchParams.get('utm_campaign') || undefined,
-  };
-}
+export const runtime = 'nodejs';
 
-// tiny 1x1 PNG for <img src="/api/track?..."> beacons
-const ONE_BY_ONE_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mO0WQ8AAbEBa4kqH+QAAAAASUVORK5CYII=',
-  'base64'
-);
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { listingId, channelId, type } = body as {
-      listingId: string; channelId?: string; type: EventType;
-    };
-    if (!listingId || !type) return NextResponse.json({ error: 'missing fields' }, { status: 400 });
-
-    const meta = getClientMeta(req);
-    await prisma.listingEvent.create({
-      data: { listingId, channelId, type, ...meta },
-    });
-
-    return new NextResponse(null, { status: 204 });
-  } catch {
-    return NextResponse.json({ error: 'bad request' }, { status: 400 });
-  }
-}
-
-// GET pixel: /api/track?listingId=...&type=view&channelId=...
+/**
+ * GET /api/track.js?listing=LISTING_ID
+ * Returns a tiny JS that:
+ *  - sends a 'view' on load
+ *  - listens for clicks on elements with [data-homi] and sends that event
+ */
 export async function GET(req: NextRequest) {
-  const u = new URL(req.url);
-  const listingId = u.searchParams.get('listingId') || '';
-  const channelId = u.searchParams.get('channelId') || undefined;
-  const typeStr = u.searchParams.get('type') || 'view';
+  const url = new URL(req.url);
+  const listing = url.searchParams.get('listing') || '';
 
-  // validate type
-  const type = (Object.values(EventType) as string[]).includes(typeStr)
-    ? (typeStr as EventType)
-    : EventType.view;
+  const js = `
+  (function(){
+    try{
+      var s = document.currentScript;
+      var u = new URL(s && s.src || window.location.href);
+      var LISTING = u.searchParams.get('listing') || ${JSON.stringify(listing)};
+      if(!LISTING) return;
 
-  if (listingId) {
-    const meta = getClientMeta(req);
-    await prisma.listingEvent.create({
-      data: { listingId, channelId, type, ...meta },
-    });
-  }
+      function send(type, extra){
+        fetch('/api/track', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(Object.assign({ listingId: LISTING, type: type }, extra||{}))
+        }).catch(function(){});
+      }
 
-  return new NextResponse(ONE_BY_ONE_PNG, {
+      // view on load
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function(){ send('view'); }, { once: true });
+      } else {
+        send('view');
+      }
+
+      // any click bubbling up from an element with [data-homi]
+      document.addEventListener('click', function(e){
+        var el = e.target && (e.target.closest ? e.target.closest('[data-homi]') : null);
+        if(!el) return;
+        var t = el.getAttribute('data-homi');
+        if(!t) return;
+        send(t);
+      });
+    }catch(e){}
+  })();
+  `.trim();
+
+  return new NextResponse(js, {
     status: 200,
     headers: {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'no-store',
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Cache-Control': 'public, max-age=300',
     },
   });
 }

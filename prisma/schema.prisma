@@ -22,9 +22,7 @@ model Appointment {
   customerEmail   String   @map("customer_email")
   locale          String   @map("locale")
   status          String   @default("pending")
-
-  // Public share handle for read-only views
-  shareId String? @unique @map("share_id")
+  shareId         String?  @unique @map("share_id")
 
   @@index([requestedStart], map: "idx_appointments_requested_start")
   @@index([status, requestedStart], map: "idx_appointments_status_start")
@@ -72,8 +70,8 @@ model Document {
   id         String   @id @default(cuid())
   ownerEmail String
   filename   String
-  storageKey String   @unique // e.g. "docs/abc.pdf" (S3 or local)
-  totpSecret String // rotating code seed
+  storageKey String   @unique
+  totpSecret String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -104,7 +102,7 @@ model DocumentView {
   viewedAt    DateTime @default(now())
   ip          String?
   userAgent   String?
-  codeShown   String // rotating code at view time
+  codeShown   String
 
   document Document      @relation("DocumentToViews", fields: [documentId], references: [id], onDelete: Cascade)
   share    DocumentShare @relation("ShareToViews", fields: [shareId], references: [id], onDelete: Cascade)
@@ -132,7 +130,7 @@ model Listing {
   city         String?
   address      String?
   priceMonthly Int?
-  url          String?       @unique // optional: guards duplicate canonical pages
+  url          String?       @unique
   externalId   String?
   status       ListingStatus @default(published)
   createdAt    DateTime      @default(now())
@@ -154,12 +152,12 @@ enum ChannelStatus {
 model ListingChannel {
   id         String        @id @default(cuid())
   listingId  String
-  platform   String // e.g., "Zillow", "SeLoger", "FB", "Custom"
+  platform   String
   externalId String?
   url        String
   status     ChannelStatus @default(active)
   createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt // helpful for sync/audits
+  updatedAt  DateTime      @updatedAt
 
   listing Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
   events  ListingEvent[] @relation("ChannelToEvents")
@@ -181,14 +179,13 @@ enum EventType {
 model ListingEvent {
   id         String    @id @default(cuid())
   listingId  String
-  channelId  String? // optional; event may be on the canonical listing
+  channelId  String?
   type       EventType
   occurredAt DateTime  @default(now())
   ip         String?
   userAgent  String?
   referer    String?
 
-  // attribution
   utmSource   String?
   utmMedium   String?
   utmCampaign String?
@@ -199,7 +196,7 @@ model ListingEvent {
 
   @@index([listingId, occurredAt], map: "idx_event_listing_time")
   @@index([type, occurredAt], map: "idx_event_type_time")
-  @@index([channelId, occurredAt], map: "idx_event_channel_time") // fast channel filters
+  @@index([channelId, occurredAt], map: "idx_event_channel_time")
 }
 
 model Lead {
@@ -214,12 +211,16 @@ model Lead {
 
   @@index([listingId, createdAt], map: "idx_lead_listing_time")
 }
-// ---------------- Market-wide scraped data ----------------
+
+/**
+ * ---------------- Market-wide scraped data ----------------
+ */
+
 model MarketListing {
-  id         String   @id @default(cuid())
-  portal     String              // e.g. "SeLoger", "Leboncoin", "BienIci"
-  externalId String?             // if you have a stable ID from the portal
-  url        String   @db.Text
+  id         String  @id @default(cuid())
+  portal     String
+  externalId String?
+  url        String  @db.Text
   title      String
   city       String?
   price      Int?
@@ -227,11 +228,44 @@ model MarketListing {
   rooms      Int?
   latitude   Float?
   longitude  Float?
+
+  imageUrl   String? @db.Text
+
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  @@unique([portal, externalId], map: "uniq_market_portal_extid")
   @@index([portal], map: "idx_market_portal")
   @@index([city], map: "idx_market_city")
   @@index([createdAt], map: "idx_market_created")
-  @@unique([portal, externalId], map: "uniq_market_portal_extid")
+  @@index([url], map: "idx_market_url") // ← NEW: speeds up dedupe by normalized URL
 }
+
+/**
+ * ---------------- Portal catalog ----------------
+ */
+
+enum PortalType {
+  rent
+  sale
+  both
+}
+
+model PortalCatalogEntry {
+  id      String     @id @default(cuid())
+  country String
+  name    String
+  url     String     @unique
+  type    PortalType
+  notes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([country])
+}  imageUrl   String?  @db.Text
+  country    String?
+  latitude   Float?
+  longitude  Float?
+
+  @@index([latitude, longitude], map: "idx_listing_lat_lng")
