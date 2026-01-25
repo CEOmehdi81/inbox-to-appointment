@@ -39,7 +39,11 @@ export default function RunInboxButton({ agencyId, onDone }: Props) {
       const res = await fetch("/api/integrations/email/run-once", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agencyId: aid }),
+        body: JSON.stringify({
+          agencyId: aid,
+          query: "newer_than:1d is:unread",
+          maxPerRun: 25,
+        }),
       });
 
       const data = (await res.json().catch(() => ({}))) as RunOnceResponse;
