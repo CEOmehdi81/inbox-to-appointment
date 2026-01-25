@@ -54,8 +54,14 @@ export default function RunInboxButton({ agencyId, onDone }: Props) {
       if (typeof r.scanned === "number") parts.push(`scanned ${r.scanned}`);
       if (typeof r.forwarded === "number") parts.push(`forwarded ${r.forwarded}`);
       if (typeof r.skipped === "number") parts.push(`skipped ${r.skipped}`);
+      if (typeof r.forwardFailures === "number") parts.push(`forwardFailures ${r.forwardFailures}`);
 
-      setMsg(parts.length ? `Done (${parts.join(", ")}).` : "Done.");
+      const failureSamples = Array.isArray(r.forwardFailureSamples) ? r.forwardFailureSamples : [];
+      const note = typeof r.note === "string" && r.note.trim() ? r.note.trim() : "";
+      const failureNote = failureSamples.length ? ` First error: ${failureSamples[0]}` : "";
+      const suffix = [note, failureNote].filter(Boolean).join(" ");
+
+      setMsg(parts.length ? `Done (${parts.join(", ")}).${suffix ? ` ${suffix}` : ""}` : "Done.");
 
       if (onDone) await onDone();
     } catch (e: any) {
