@@ -13,8 +13,14 @@ export async function POST(req: NextRequest) {
     }
 
     const uiSecret = (process.env.HOMI_UI_POLL_SECRET || "").trim();
-    if (!uiSecret) {
-      return NextResponse.json({ ok: false, error: "missing_HOMI_UI_POLL_SECRET" }, { status: 500 });
+    const n8nSecret = (process.env.N8N_SHARED_SECRET || "").trim();
+    const authKey = uiSecret || n8nSecret;
+
+    if (!authKey) {
+      return NextResponse.json(
+        { ok: false, error: "missing_HOMI_UI_POLL_SECRET_or_N8N_SHARED_SECRET" },
+        { status: 500 }
+      );
     }
 
     const url = new URL("/api/gmail/poll", req.url);
@@ -23,9 +29,14 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-homi-ui-key": uiSecret,
+        ...(uiSecret ? { "x-homi-ui-key": uiSecret } : { "x-homi-n8n-key": authKey }),
       },
-      body: JSON.stringify({ agencyId, days: body?.days ?? 30 }),
+      body: JSON.stringify({
+        agencyId,
+        days: body?.days ?? 30,
+        maxPerRun: body?.maxPerRun,
+        query: body?.query,
+      }),
       cache: "no-store",
     });
 
