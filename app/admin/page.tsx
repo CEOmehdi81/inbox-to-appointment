@@ -1,87 +1,171 @@
-// app/admin/page.tsx
-import RevenueChart from "@/components/RevenueChart";
-import ActivityDonut from "@/components/ActivityDonut";
-import ClientListingsCard from "@/components/ClientListingsCard";
+import { getListingHealthRows } from '@/lib/queries/listingHealth';
+import { getPortalRoiRows } from '@/lib/queries/portalRoi';
+import { getAttributionRows } from '@/lib/queries/attribution';
+import { PortalRoiChart } from '@/components/PortalRoiChart';
 
-// If you want to feed real rows later, you'll pass them like:
-// <ClientListingsCard rows={rowsFromDB} />
+export default async function AdminDashboardPage() {
+  const [listingRows, portalRows, leadRows] = await Promise.all([
+    getListingHealthRows({ limit: 200 }),
+    getPortalRoiRows({}),
+    getAttributionRows({ daysBack: 7, limit: 500 }),
+  ]);
 
-export default async function AdminDashboard() {
+  const totalListings = listingRows.length;
+  const newLeads7d = leadRows.length;
+  const underperformingCount = listingRows.filter(
+    (r) => r.flag_underperforming
+  ).length;
+
+  const totalSpend = portalRows.reduce((sum, r) => sum + r.spend, 0);
+
+  const avgCpl =
+    (() => {
+      const values = portalRows
+        .map((r) => r.cpl)
+        .filter((v): v is number => v != null && Number.isFinite(v));
+      if (!values.length) return null;
+      return values.reduce((a, b) => a + b, 0) / values.length;
+    })() ?? null;
+
+  // --- NEW: build simple monthly avg CPL trend for ROI graph ---
+  const monthlyAvgCpl = (() => {
+    const byMonth = new Map<string, { sum: number; count: number }>();
+    portalRows.forEach((r) => {
+      if (r.cpl != null && Number.isFinite(r.cpl)) {
+        const key = r.month; // "YYYY-MM"
+        const current = byMonth.get(key) ?? { sum: 0, count: 0 };
+        current.sum += r.cpl;
+        current.count += 1;
+        byMonth.set(key, current);
+      }
+    });
+
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, { sum, count }]) => ({
+        month,
+        avgCpl: count > 0 ? sum / count : 0,
+      }));
+  })();
+
+  const maxAvgCpl =
+    monthlyAvgCpl.length > 0
+      ? Math.max(...monthlyAvgCpl.map((m) => m.avgCpl))
+      : 0;
+
   return (
-    <div className="space-y-6">
-      {/* Top greeting / intro */}
+    <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Welcome back 👋</h1>
-          <p className="text-sm text-gray-400">
-            Here’s what’s happening with your listings today.
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-gray-500">
+            Here&apos;s what&apos;s happening with your listings and portals.
           </p>
         </div>
+      </div>
 
-        {/* (Optional) search placeholder – wire up later */}
-        <div className="hidden md:block">
-          <input
-            placeholder="Search anything…"
-            className="w-[260px] rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm outline-none focus:border-white/20"
-          />
+      {/* Top stat cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard title="Listings" value={totalListings.toString()} />
+        <StatCard
+          title="New leads (7 days)"
+          value={newLeads7d.toString()}
+        />
+        <StatCard
+          title="Total spend (this month)"
+          value={
+            totalSpend ? `${totalSpend.toLocaleString('fr-FR')} €` : '—'
+          }
+        />
+        <StatCard
+          title="Avg CPL (this month)"
+          value={avgCpl != null ? `${avgCpl.toFixed(0)} €` : '—'}
+        />
+      </div>
+
+      {/* CPL by portal + health summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-medium mb-2">CPL by portal</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Visual view of cost per lead across your active portals.
+          </p>
+          <PortalRoiChart rows={portalRows} />
+        </div>
+
+        <div className="border border-gray-800 rounded-xl p-4 flex flex-col justify-between">
+          <div>
+            <h2 className="text-sm font-medium mb-2">Listing health summary</h2>
+            <p className="text-xs text-gray-400">
+              {underperformingCount} listing
+              {underperformingCount === 1 ? '' : 's'} are currently flagged as
+              underperforming based on leads and days-on-market.
+            </p>
+          </div>
+          <div className="mt-4 text-xs text-gray-500">
+            Go to <span className="font-medium">Listings</span> in the sidebar
+            to see which properties need attention first.
+          </div>
         </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4 shadow-[var(--shadow-soft)]">
-          <div className="text-xs text-gray-400">New leads</div>
-          <div className="mt-2 flex items-end gap-2">
-            <div className="text-2xl font-semibold">24</div>
-            <div className="text-emerald-400 text-xs">+3.2%</div>
+      {/* NEW: ROI trend graph (avg CPL by month) */}
+      {monthlyAvgCpl.length > 0 && (
+        <div className="border border-gray-800 rounded-xl p-4">
+          <h2 className="text-sm font-medium mb-2">
+            ROI trend (avg CPL by month)
+          </h2>
+          <p className="text-xs text-gray-500 mb-4">
+            How your average cost per lead is evolving across all portals.
+          </p>
+
+          <div className="space-y-3">
+            {monthlyAvgCpl.map((row) => {
+              const width =
+                maxAvgCpl > 0 ? Math.max(5, (row.avgCpl / maxAvgCpl) * 100) : 0;
+
+              return (
+                <div
+                  key={row.month}
+                  className="flex items-center gap-3 text-xs"
+                >
+                  <div className="w-20 text-gray-400">{row.month}</div>
+                  <div className="flex-1 h-2 bg-gray-800 rounded">
+                    <div
+                      className="h-2 rounded bg-emerald-500"
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                  <div className="w-16 text-right text-gray-200">
+                    {row.avgCpl.toFixed(0)} €
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
 
-        <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4 shadow-[var(--shadow-soft)]">
-          <div className="text-xs text-gray-400">Viewings scheduled</div>
-          <div className="mt-2 flex items-end gap-2">
-            <div className="text-2xl font-semibold">12</div>
-            <div className="text-rose-400 text-xs">-1.1%</div>
-          </div>
-        </div>
-
-        <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4 shadow-[var(--shadow-soft)]">
-          <div className="text-xs text-gray-400">Applications</div>
-          <div className="mt-2 flex items-end gap-2">
-            <div className="text-2xl font-semibold">7</div>
-            <div className="text-emerald-400 text-xs">+0.8%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Analytics + Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Analytics (2/3 width) */}
-        <div className="lg:col-span-2 bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium">Analytics</div>
-            <div className="flex items-center gap-4 text-xs text-gray-400">
-              <span className="inline-flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-[color:var(--brand-primary)]" /> Income
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-[color:var(--brand-lime)]" /> Outcome
-              </span>
-            </div>
-          </div>
-
-          <RevenueChart />
-        </div>
-
-        {/* Activity (1/3 width) */}
-        <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
-          <div className="text-sm font-medium mb-3">Activity</div>
-          <ActivityDonut />
-        </div>
-      </div>
-
-      {/* Client listings */}
-      <ClientListingsCard />
+function StatCard({
+  title,
+  value,
+  subtitle,
+}: {
+  title: string;
+  value: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="border border-gray-800 rounded-xl p-4 flex flex-col gap-1">
+      <span className="text-xs text-gray-400">{title}</span>
+      <span className="text-2xl font-semibold">{value}</span>
+      {subtitle && (
+        <span className="text-xs text-gray-500">{subtitle}</span>
+      )}
     </div>
   );
 }

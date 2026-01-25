@@ -1,0 +1,6 @@
+id,title,portal,location,price,status,listed_at
+L001,Modern 2BR,SeLoger,Paris 15,520000,active,2025-10-10
+L002,Cozy Studio,LeBonCoin,Lyon,190000,active,2025-10-15
+L003,Family Duplex,LogicImmo,Marseille,350000,active,2025-10-20
+L004,Loft Downtown,SeLoger,Paris 3,720000,sold,2025-10-05
+L005,Suburban House,LeBonCoin,Lille,280000,active,2025-10-22

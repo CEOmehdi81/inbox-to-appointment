@@ -1,0 +1,270 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>HOMI — Label Assistant (single file)</title>
+<style>
+  :root{--bg:#0b0d10;--fg:#e8eaf0;--muted:#9aa3b2;--accent:#4aa8ff;--card:#131720;--ok:#27c93f;--warn:#ffbd2e;--bad:#ff5f56;}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  header,footer{padding:10px 14px;background:#0e121a;border-bottom:1px solid #1c2432}
+  header h1{font-size:16px;margin:0}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  button,input[type="file"],select{background:#1a2130;color:var(--fg);border:1px solid #283146;border-radius:8px;padding:8px 10px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#001b2e}
+  .layout{display:grid;grid-template-columns: 360px 1fr 420px;gap:10px;height:calc(100% - 120px);padding:10px}
+  .panel{background:var(--card);border:1px solid #222a3a;border-radius:12px;overflow:auto}
+  .list{padding:8px}
+  .item{padding:8px;border-radius:8px;border:1px solid #222a3a;margin:6px 0;cursor:pointer}
+  .item.sel{border-color:var(--accent);box-shadow:0 0 0 2px #4aa8ff22}
+  .meta{color:var(--muted);font-size:12px;margin-top:4px}
+  iframe{width:100%;height:100%;border:0;background:white}
+  .form{padding:10px;display:grid;grid-template-columns: 120px 1fr;gap:8px;align-items:center}
+  .form input,.form textarea,.form select{width:100%;background:#0f1320;border:1px solid #283146;border-radius:8px;padding:8px;color:var(--fg)}
+  .form textarea{min-height:56px}
+  .row span.hint{color:var(--muted);font-size:11px}
+  .caps{font-variant: all-small-caps;color:var(--muted);letter-spacing:.06em}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#1e2636;color:#b8c0d0;margin-right:6px;font-size:12px}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+</style>
+<header>
+  <h1>HOMI — Label Assistant</h1>
+  <div class="toolbar">
+    <input id="indexFile" type="file" accept=".jsonl,.json" />
+    <button id="btnLoad">Load index.jsonl</button>
+    <label class="caps">Split<select id="split"><option value="0.8">80/20</option><option value="0.9">90/10</option><option value="0.7">70/30</option></select></label>
+    <button id="btnExport" class="primary">Export train.jsonl &amp; eval.jsonl</button>
+    <span class="caps" id="status">idle</span>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="panel"><div class="list" id="list"></div></div>
+  <div class="panel"><iframe id="preview"></iframe></div>
+  <div class="panel">
+    <form class="form" id="form">
+      <div class="row caps">Required</div><div></div>
+      <label>source</label><input name="source" required>
+      <label>url</label><input name="url" required>
+      <label>page_type</label><select name="page_type"><option>detail</option><option>grid</option></select>
+      <label>rent_or_sale</label><select name="rent_or_sale"><option value="">(unknown)</option><option>rent</option><option>sale</option></select>
+      <label>seen_at</label><input name="seen_at" type="datetime-local">
+      <div class="row caps">Preferred</div><div></div>
+      <label>title</label><input name="title">
+      <label>description</label><textarea name="description"></textarea>
+      <label>price_amount</label><input name="price_amount" type="number" step="0.01">
+      <label>price_currency</label><input name="price_currency" placeholder="EUR, USD, GBP">
+      <label>area_m2</label><input name="area_m2" type="number" step="0.01">
+      <label>rooms</label><input name="rooms" type="number" step="1">
+      <label>bedrooms</label><input name="bedrooms" type="number" step="1">
+      <label>bathrooms</label><input name="bathrooms" type="number" step="1">
+      <label>agency</label><input name="agency">
+      <label>listing_id</label><input name="listing_id">
+      <label>images (comma)</label><input name="images">
+      <label>features (comma)</label><input name="features">
+      <label>address.freeform</label><input name="address.freeform">
+      <label>address.street</label><input name="address.street">
+      <label>address.city</label><input name="address.city">
+      <label>address.region</label><input name="address.region">
+      <label>address.postal_code</label><input name="address.postal_code">
+      <label>address.country</label><input name="address.country" placeholder="FR, ES, DE, ...">
+      <label>geo.lat</label><input name="geo.lat" type="number" step="0.000001">
+      <label>geo.lng</label><input name="geo.lng" type="number" step="0.000001">
+      <div class="row caps">System</div><div></div>
+      <label>need_ai</label><select name="need_ai"><option value="false">false</option><option value="true">true</option></select>
+      <label>confidence (json)</label><input name="confidence" placeholder='{"address":0.8}'>
+      <div></div>
+      <div class="grid">
+        <button type="button" id="btnAuto">Auto-suggest</button>
+        <button type="button" id="btnSave" class="primary">Save label</button>
+      </div>
+      <div class="row"><span class="hint">Saved locally. Export when you’re done.</span></div>
+    </form>
+  </div>
+</div>
+
+<footer><span id="counts"></span></footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const listEl = $('#list'), iframe = $('#preview'), form = $('#form');
+const statusEl = $('#status'), countsEl = $('#counts');
+let entries = [], labels = {}, cur = -1;
+
+$('#btnLoad').onclick = async () => {
+  const f = $('#indexFile').files?.[0];
+  if (!f) { alert('Pick ~/homi-data/raw/index.jsonl'); return; }
+  const txt = await f.text();
+  const lines = txt.split(/\r?\n/).filter(Boolean);
+  entries = lines.map(l => JSON.parse(l));
+  renderList(); status('Loaded index: ' + entries.length + ' rows');
+};
+
+function status(s){ statusEl.textContent = s; }
+function renderList(){
+  listEl.innerHTML = '';
+  entries.forEach((e,i) => {
+    const div = document.createElement('div');
+    div.className = 'item' + (i===cur?' sel':'');
+    div.innerHTML = `
+      <div><b>${esc(e.domain)}</b> • <span class="badge">${esc(e.page_type)}</span></div>
+      <div class="meta">${esc((e.url||'').slice(0,120))}</div>
+      <div class="meta">${esc(e.seen_at||'')}</div>`;
+    div.onclick = () => selectIndex(i);
+    listEl.appendChild(div);
+  });
+  updateCounts();
+}
+function esc(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function selectIndex(i){
+  cur = i; renderList();
+  const e = entries[i];
+  const htmlFile = await promptOpenFile(`Open file: ${e.path_html}`);
+  const metaFile = await promptOpenFile(`Open file: ${e.path_meta}`);
+  const htmlText = await htmlFile.text();
+  const meta = JSON.parse(await metaFile.text());
+  const blob = new Blob([htmlText], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  iframe.src = url;
+  e._html = htmlText; e._meta = meta;
+  const base = {
+    source: meta.source || e.domain, url: e.url,
+    page_type: e.page_type || meta.page_type || 'detail',
+    seen_at: (e.seen_at || meta.seen_at || '').replace('Z',''),
+  };
+  fillForm(Object.assign({}, base, labels[e.url]||{}));
+}
+function promptOpenFile(){ return new Promise(resolve=>{ const inp = document.createElement('input'); inp.type='file'; inp.onchange=()=>resolve(inp.files[0]); inp.click(); }); }
+
+$('#btnAuto').onclick = () => {
+  if (cur<0) return;
+  const e = entries[cur];
+  const suggestions = suggestFromHtml(e._html || '', e._meta || {});
+  const keep = getForm();
+  delete suggestions.url; delete suggestions.page_type; delete suggestions.source; delete suggestions.seen_at;
+  fillForm(Object.assign({}, keep, suggestions));
+  status('Auto-suggest filled');
+};
+
+function suggestFromHtml(html, meta){
+  const out = { source: meta.source||'', url: meta.url||'', page_type: meta.page_type||'detail',
+    seen_at: meta.seen_at||new Date().toISOString(), need_ai: 'false', confidence: {} };
+  try{
+    const ld = extractJsonLd(html);
+    const og = extractOpenGraph(html);
+    const title = first([ld.title, og.ogTitle, meta.title]);
+    const desc = first([ld.description, og.ogDescription]);
+    const currency = first([ld.priceCurrency, guessCurrency(html)]);
+    const price = num(ld.price || guessPrice(html));
+    const area = num(ld.floorSize || guessArea(html));
+    const rooms = num(ld.rooms), bedrooms = num(ld.bedrooms), bathrooms = num(ld.bathrooms);
+    const address = ld.address || {}; const geo = ld.geo || {};
+    const images = uniq([...(ld.images||[]), ...(og.images||[])]);
+    const agency = ld.seller || ld.agent || ''; const listing_id = ld.identifier || '';
+    const rent_or_sale = ld.rentOrSale || guessRentOrSale(html);
+    assign(out,'title',title,0.7); assign(out,'description',desc,0.5);
+    assign(out,'price_amount',price, price?0.9:0); assign(out,'price_currency',currency, currency?0.8:0);
+    assign(out,'area_m2',area, area?0.7:0); assign(out,'rooms',rooms, rooms?0.6:0);
+    assign(out,'bedrooms',bedrooms, bedrooms?0.7:0); assign(out,'bathrooms',bathrooms, bathrooms?0.6:0);
+    assign(out,'agency',agency, agency?0.5:0); assign(out,'listing_id',listing_id, listing_id?0.6:0);
+    assign(out,'rent_or_sale',rent_or_sale, rent_or_sale?0.8:0);
+    const addr = {}; if (address.freeform) addr.freeform = address.freeform;
+    if (address.street) addr.street = address.street; if (address.city) addr.city = address.city;
+    if (address.region) addr.region = address.region; if (address.postal_code) addr.postal_code = address.postal_code;
+    if (address.country) addr.country = address.country; if (Object.keys(addr).length) out.address = addr;
+    if (geo.lat && geo.lng) out.geo = {lat: Number(geo.lat), lng: Number(geo.lng)};
+    if (images.length) out.images = images.slice(0,12);
+  }catch(e){ console.warn('suggest error', e); }
+  return out;
+  function assign(o,k,v,c){ if (v!==undefined && v!==null && v!==''){ o[k]=v; o.confidence[k]=c; } }
+  function first(a){ return a.find(v=>v!=null && v!==''); }
+  function num(v){ const n = Number(String(v).replace(/[^0-9.,-]/g,'' ).replace(',', '.')); return isFinite(n)?n:undefined; }
+  function uniq(a){ return [...new Set(a.filter(Boolean))]; }
+}
+function extractJsonLd(html){
+  const out = {}; const blocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  for (const m of blocks){ try{
+    let j = JSON.parse(m[1].trim()); if (Array.isArray(j)) j = j.find(x=>x['@type']) || j[0]; if (!j) continue;
+    if (j.offers){ const ofr = Array.isArray(j.offers)? j.offers[0]: j.offers; out.price = ofr.price ?? ofr.lowPrice; out.priceCurrency = ofr.priceCurrency;
+      out.rentOrSale = (ofr.category || '').toLowerCase().includes('rent') ? 'rent' : undefined; }
+    out.title = j.name || j.headline; out.description = j.description;
+    if (j.floorSize && j.floorSize.value) out.floorSize = j.floorSize.value;
+    out.rooms = j.numberOfRooms ?? j.rooms; out.bedrooms = j.numberOfBedrooms; out.bathrooms = j.numberOfBathroomsTotal ?? j.numberOfBathrooms;
+    if (j.address){ const a = j.address; out.address = { freeform:[a.streetAddress,a.postalCode,a.addressLocality,a.addressRegion,a.addressCountry].filter(Boolean).join(', '),
+      street:a.streetAddress, city:a.addressLocality, region:a.addressRegion, postal_code:a.postalCode, country:a.addressCountry }; }
+    if (j.geo){ const g = j.geo; out.geo = { lat:g.latitude, lng:g.longitude }; }
+    if (j.image){ out.images = (Array.isArray(j.image)? j.image : [j.image]).map(String); }
+    if (j.seller && j.seller.name) out.seller = j.seller.name;
+    if (j.identifier) out.identifier = (typeof j.identifier==='object' && j.identifier.value)? j.identifier.value : j.identifier;
+  }catch{} }
+  return { title: out.title, description: out.description, price: out.price, priceCurrency: out.priceCurrency, floorSize: out.floorSize,
+    rooms: out.rooms, bedrooms: out.bedrooms, bathrooms: out.bathrooms, address: out.address, geo: out.geo, images: out.images,
+    seller: out.seller, agent: out.seller, identifier: out.identifier, rentOrSale: out.rentOrSale };
+}
+function extractOpenGraph(html){
+  const get = p => { const rx = new RegExp(`<meta[^>]+property=["']${p}["'][^>]*content=["']([^"']+)["'][^>]*>`,'i'); const m = html.match(rx); return m? m[1] : undefined; };
+  const images = [...html.matchAll(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/ig)].map(m=>m[1]);
+  return { ogTitle:get('og:title'), ogDescription:get('og:description'), images };
+}
+function guessPrice(html){ const m = html.match(/(?:€|eur|usd|\$|£)\s*([0-9][0-9 .,\u00a0]{2,})/i); return m? m[1] : undefined; }
+function guessCurrency(html){ if (/€|eur/i.test(html)) return 'EUR'; if (/\$|usd/i.test(html)) return 'USD'; if (/£|gbp/i.test(html)) return 'GBP'; }
+function guessArea(html){ const m = html.match(/(\d{2,4}(?:[.,]\d{1,2})?)\s*(?:m²|m2|sqm|m\^2)/i); return m? m[1] : undefined; }
+function guessRentOrSale(html){ const s = html.toLowerCase(); if (/(rent|à louer|alquiler|miete)/.test(s)) return 'rent'; if (/(sale|à vendre|venta|kauf)/.test(s)) return 'sale'; }
+
+function getForm(){
+  const data = {}; const fd = new FormData(form); fd.forEach((v,k)=>{ data[k]=v; });
+  if (data['images']) data['images']=data['images'].split(',').map(s=>s.trim()).filter(Boolean);
+  if (data['features']) data['features']=data['features'].split(',').map(s=>s.trim()).filter(Boolean);
+  const addr=pick(data,'address.freeform','address.street','address.city','address.region','address.postal_code','address.country');
+  if (Object.keys(addr).length) data.address=addr;
+  const geo=pick(data,'geo.lat','geo.lng'); if (Object.keys(geo).length){ geo.lat=Number(geo['geo.lat']); geo.lng=Number(geo['geo.lng']); data.geo=geo; }
+  ['price_amount','area_m2','rooms','bedrooms','bathrooms'].forEach(k=>{ if (data[k]!=='' && data[k]!=null) data[k]=Number(data[k]); });
+  if (data['confidence']){ try{ data.confidence = JSON.parse(data['confidence']); }catch{ data.confidence = {}; } }
+  data.need_ai = String(data.need_ai) === 'true';
+  ['address.freeform','address.street','address.city','address.region','address.postal_code','address.country','geo.lat','geo.lng'].forEach(k=>delete data[k]);
+  return data;
+  function pick(obj,...keys){ const o={}; keys.forEach(k=>{ if (obj[k]) o[k.split('.').pop()] = obj[k]; }); return o; }
+}
+function fillForm(obj){
+  const set=(name,val)=>{ const el=form.querySelector(`[name="${cssEscape(name)}"]`); if(!el) return; el.value=(val==null)?'':(typeof val==='object'?JSON.stringify(val):String(val)); };
+  set('source', obj.source); set('url', obj.url); set('page_type', obj.page_type||'detail');
+  set('rent_or_sale', obj.rent_or_sale||''); set('seen_at', (obj.seen_at||'').replace('Z',''));
+  set('title', obj.title); set('description', obj.description);
+  set('price_amount', obj.price_amount); set('price_currency', obj.price_currency);
+  set('area_m2', obj.area_m2); set('rooms', obj.rooms); set('bedrooms', obj.bedrooms); set('bathrooms', obj.bathrooms);
+  set('agency', obj.agency); set('listing_id', obj.listing_id);
+  set('images', (obj.images||[]).join(', ')); set('features', (obj.features||[]).join(', '));
+  if (obj.address){ set('address.freeform', obj.address.freeform); set('address.street', obj.address.street);
+    set('address.city', obj.address.city); set('address.region', obj.address.region);
+    set('address.postal_code', obj.address.postal_code); set('address.country', obj.address.country); }
+  if (obj.geo){ set('geo.lat', obj.geo.lat); set('geo.lng', obj.geo.lng); }
+  set('need_ai', obj.need_ai?'true':'false'); set('confidence', obj.confidence ? JSON.stringify(obj.confidence) : '');
+}
+function cssEscape(id){ return CSS && CSS.escape ? CSS.escape(id) : id.replace(/"/g,'\\"'); }
+
+$('#btnSave').onclick = () => {
+  if (cur<0) return;
+  const e = entries[cur]; const data = getForm();
+  data.page_type = data.page_type || 'detail';
+  data.seen_at = data.seen_at ? new Date(data.seen_at).toISOString() : new Date().toISOString();
+  labels[e.url] = data; localStorage.setItem('homi_labels', JSON.stringify(labels));
+  updateCounts(); status('Saved');
+};
+function updateCounts(){ const nL = Object.keys(labels).length; countsEl.textContent = `Entries: ${entries.length} • Labeled: ${nL}`; }
+try{ labels = JSON.parse(localStorage.getItem('homi_labels')||'{}')||{}; }catch{ labels = {}; }
+
+$('#btnExport').onclick = () => {
+  const rows = entries.filter(e => labels[e.url]).map(e => ({ input:{ url:e.url, html_path:e.path_html, meta_path:e.path_meta }, output: labels[e.url] }));
+  if (!rows.length) { alert('No labeled items yet.'); return; }
+  const split = parseFloat($('#split').value || '0.8');
+  const shuffled = rows.slice().sort(()=>Math.random()-0.5);
+  const nTrain = Math.max(1, Math.floor(shuffled.length * split));
+  const train = shuffled.slice(0, nTrain), eval_ = shuffled.slice(nTrain);
+  downloadJsonl('train.jsonl', train); downloadJsonl('eval.jsonl', eval_);
+  status(`Exported ${train.length} train / ${eval_.length} eval`);
+};
+function downloadJsonl(name, arr){
+  const blob = new Blob([arr.map(o=>JSON.stringify(o)).join('\n')+'\n'], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+</script>

@@ -1,0 +1,5 @@
+source,country,admin_area,locality,postcode,street_address,latitude,longitude,property_type,rooms,bathrooms,floor_area_m2,lot_area_m2,sale_price,sale_date
+dvf,FR,Ile-de-France,Paris,75011,12 Rue de la Roquette,48.854,2.375,apartment,2,1,45,,520000,2024-06-14
+ppd,GB,England,London,SW1A 1AA,1 Example St,51.501,-0.141,terraced,3,2,95,,1350000,2024-05-02
+dvf,FR,Ile-de-France,Paris,75011,11 Rue Saint-Maur,48.864,2.377,apartment,2,1,47,,505000,2024-07-18
+dvf,FR,Ile-de-France,Paris,75011,11 Rue Saint-Maur,48.864,2.377,apartment,2,1,47,,505000,2024-07-18

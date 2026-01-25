@@ -1,0 +1,4 @@
+[{"country":"country","admin_area":"admin_area","locality":"locality","postcode":"postcode","property_type":"property_type","ym":"sale_da","n":1,"avg_ppm2":null},
+{"country":"FR","admin_area":"Ile-de-France","locality":"Paris","postcode":"75011","property_type":"apartment","ym":"2024-07","n":1,"avg_ppm2":10745.0},
+{"country":"FR","admin_area":"Ile-de-France","locality":"Paris","postcode":"75011","property_type":"apartment","ym":"2024-06","n":1,"avg_ppm2":11556.0},
+{"country":"GB","admin_area":"England","locality":"London","postcode":"SW1A 1AA","property_type":"terraced","ym":"2024-05","n":1,"avg_ppm2":14211.0}]

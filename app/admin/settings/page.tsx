@@ -1,3 +1,4 @@
+"use client";
 // app/admin/settings/page.tsx
 import { revalidatePath } from "next/cache";
 import { getSettings, updateSettings } from "@/lib/settings";

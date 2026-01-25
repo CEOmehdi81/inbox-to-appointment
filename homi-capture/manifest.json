@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "HOMI Market Capture",
+  "version": "0.1.1",
+  "description": "Capture property listing data and send it to HOMI (n8n webhook).",
+  "action": {
+    "default_title": "HOMI Capture",
+    "default_popup": "popup.html"
+  },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["scripting", "storage", "activeTab"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,283 +1,130 @@
-'use client';
+import { getPortalRoiRows } from '@/lib/queries/portalRoi';
+import { getSpendRows } from '@/lib/queries/spend';
+import { PortalRoiChart } from '@/components/PortalRoiChart';
+import { SpendManagerForm } from '@/components/admin/SpendManagerForm';
 
-export const dynamic = 'force-dynamic';
+export default async function MarketPage() {
+  const [portalRows, spendRows] = await Promise.all([
+    getPortalRoiRows({}),
+    getSpendRows(),
+  ]);
 
-import { useEffect, useMemo, useState } from 'react';
+  // Unique list of portals for the Spend form dropdown
+  const portals = Array.from(
+    new Set(portalRows.map((r) => r.portal).filter(Boolean))
+  );
 
-type Portal = {
-  country: string;
-  name: string;
-  url: string;
-  type: 'rent' | 'sale' | 'both';
-  notes?: string | null;
-};
-
-// Accepts { items }, { portals }, or { countries: [{ country, portals: [...] }] }
-function normalize(resp: any): Portal[] {
-  if (Array.isArray(resp?.items)) return resp.items as Portal[];
-  if (Array.isArray(resp?.portals)) return resp.portals as Portal[];
-  if (Array.isArray(resp?.countries)) {
-    return resp.countries.flatMap((c: any) =>
-      (c?.portals ?? []).map((p: any) => ({
-        ...p,
-        country: p.country ?? c.country,
-      })),
-    );
-  }
-  return [];
-}
-
-export default function MarketPage() {
-  const [country, setCountry] = useState<string>('France');
-  const [portals, setPortals] = useState<Portal[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const count = useMemo(() => portals.length, [portals]);
-
-  // --- helpers ---------------------------------------------------------------
-
-  async function getJSON(url: string, init?: RequestInit) {
-    const res = await fetch(url, { cache: 'no-store', ...init, headers: { Accept: 'application/json', ...(init?.headers || {}) } });
-    if (!res.ok) {
-      // try to surface API error body if any
-      let msg = `HTTP ${res.status} ${res.statusText}`;
-      try {
-        const t = await res.text();
-        if (t) msg += ` – ${t.slice(0, 200)}`;
-      } catch {}
-      throw new Error(msg);
-    }
-    // robust JSON parse
-    try {
-      return await res.json();
-    } catch {
-      const t = await res.text();
-      throw new Error(`Non-JSON/empty response: ${t.slice(0, 200)}`);
-    }
-  }
-
-  async function fetchCatalog(selectedCountry: string) {
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const q = selectedCountry.trim()
-        ? `?country=${encodeURIComponent(selectedCountry.trim())}`
-        : '';
-      // GET same-origin to avoid CORS/preflight
-      const data = await getJSON(`/api/market/catalog${q}`);
-      setPortals(normalize(data));
-      setNotice('Fetched portals.');
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-      setPortals([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function toCSV(rows: Portal[]) {
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const header = ['country', 'name', 'url', 'type', 'notes'].map(esc).join(',');
-    const lines = rows.map((r) => [r.country, r.name, r.url, r.type, r.notes ?? ''].map(esc).join(','));
-    return [header, ...lines].join('\n');
-  }
-
-  async function exportCSV(rows: Portal[], label: string) {
-    const csv = toCSV(rows);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `portals_${label || 'global'}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  // DB helpers (these match your existing endpoints)
-  async function loadFromDB(selectedCountry: string) {
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const q = selectedCountry.trim()
-        ? `?country=${encodeURIComponent(selectedCountry.trim())}`
-        : '';
-      const data = await getJSON(`/api/market/catalog/from-db${q}`);
-      setPortals(normalize(data));
-      setNotice('Loaded from database.');
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-      setPortals([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveToDB() {
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const data = await getJSON('/api/market/catalog/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ portals }),
-      });
-      // if API returns something informative, you could surface it here
-      setNotice('Saved to database.');
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // initial fetch
-  useEffect(() => {
-    fetchCatalog(country);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // --- UI --------------------------------------------------------------------
+  // For dashboard text (optional)
+  const totalSpend = portalRows.reduce((sum, r) => sum + r.spend, 0);
+  const totalLeads = portalRows.reduce((sum, r) => sum + r.leads, 0);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl p-4">
-        <h2 className="text-lg font-semibold mb-3">Portal Catalog</h2>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col">
-            <label className="text-sm opacity-80 mb-1">Country (optional)</label>
-            <input
-              className="px-3 py-2 rounded bg-white/5 border border-white/10 outline-none w-80"
-              placeholder="e.g. France — leave empty for global"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-            />
-          </div>
-
-          <button
-            onClick={() => fetchCatalog(country)}
-            className="px-4 py-2 rounded bg-white text-black hover:opacity-90 disabled:opacity-50"
-            disabled={loading}
-          >
-            {loading ? 'Working…' : 'Fetch portals'}
-          </button>
-
-          <button
-            onClick={() => {
-              setCountry('');
-              fetchCatalog('');
-            }}
-            className="px-3 py-2 rounded border border-white/20 hover:bg-white/10 disabled:opacity-50"
-            disabled={loading}
-          >
-            Global
-          </button>
-
-          <button
-            onClick={() => loadFromDB(country)}
-            className="px-3 py-2 rounded border border-white/20 hover:bg-white/10 disabled:opacity-50"
-            disabled={loading}
-            title="Load existing catalog entries from your database"
-          >
-            Load from DB
-          </button>
-
-          <button
-            onClick={saveToDB}
-            className="px-3 py-2 rounded border border-white/20 hover:bg-white/10 disabled:opacity-50"
-            disabled={loading || portals.length === 0}
-            title="Persist current results into your database"
-          >
-            Save to DB
-          </button>
-
-          <button
-            onClick={() => exportCSV(portals, country.trim())}
-            className="px-3 py-2 rounded border border-white/20 hover:bg-white/10 disabled:opacity-50"
-            disabled={loading || portals.length === 0}
-            title="Download current results as CSV"
-          >
-            Export CSV
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(JSON.stringify(portals, null, 2));
-                setNotice('JSON copied to clipboard.');
-              } catch {
-                const blob = new Blob([JSON.stringify(portals, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-              }
-            }}
-            className="px-3 py-2 rounded border border-white/20 hover:bg-white/10 disabled:opacity-50"
-            disabled={loading || portals.length === 0}
-            title="Copy current results as JSON"
-          >
-            Copy JSON
-          </button>
-
-          <div className="opacity-70 text-sm ml-auto">{count} portals</div>
+    <div className="p-6 space-y-8">
+      {/* Header */}
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Portal ROI</h1>
+          <p className="text-sm text-gray-500">
+            Cost per lead and performance trends by portal.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            This month: {totalSpend.toLocaleString('fr-FR')} € for{' '}
+            {totalLeads} leads.
+          </p>
         </div>
+        <div className="w-80">
+          <PortalRoiChart rows={portalRows} />
+        </div>
+      </header>
 
-        {error && (
-          <div className="mt-3 text-red-400 border border-red-400/40 rounded p-3">
-            Error: {error}
-          </div>
-        )}
-        {notice && !error && (
-          <div className="mt-3 text-emerald-300 border border-emerald-400/30 rounded p-3">
-            {notice}
-          </div>
-        )}
+      {/* ROI table */}
+      <div className="overflow-x-auto rounded-lg border border-gray-800 bg-black/40">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-900">
+            <tr>
+              <th className="px-3 py-2 text-left">Portal</th>
+              <th className="px-3 py-2 text-right">Spend</th>
+              <th className="px-3 py-2 text-right">Leads</th>
+              <th className="px-3 py-2 text-right">CPL</th>
+              <th className="px-3 py-2 text-right">Prev CPL</th>
+              <th className="px-3 py-2 text-right">Trend</th>
+            </tr>
+          </thead>
+          <tbody>
+            {portalRows.map((row) => (
+              <tr key={row.portal} className="border-t border-gray-800">
+                <td className="px-3 py-2">{row.portal}</td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.spend.toLocaleString('fr-FR')} €
+                </td>
+
+                <td className="px-3 py-2 text-right">{row.leads}</td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.cpl != null ? `${row.cpl.toFixed(0)} €` : '—'}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  {row.prev_cpl != null ? `${row.prev_cpl.toFixed(0)} €` : '—'}
+                </td>
+
+                <td className="px-3 py-2 text-right">
+                  <TrendCell pct={row.cpl_change_pct} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      <div className="bg-[color:var(--brand-card)] border border-white/10 rounded-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10">
-          <div className="text-sm font-medium">Results</div>
+      {/* Spend manager section */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Spend manager</h2>
+          <p className="text-sm text-gray-500">
+            Current monthly spend entries by portal. Updating here will
+            immediately refresh ROI metrics.
+          </p>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* 🔹 New form */}
+        <SpendManagerForm portals={portals} />
+
+        {/* Existing spend table */}
+        <div className="overflow-x-auto rounded-lg border border-gray-800 bg-black/40">
           <table className="min-w-full text-sm">
-            <thead className="text-left opacity-70">
+            <thead className="bg-gray-900">
               <tr>
-                <th className="py-2 px-4">Country</th>
-                <th className="py-2 px-4">Name</th>
-                <th className="py-2 px-4">Type</th>
-                <th className="py-2 px-4">Notes</th>
+                <th className="px-3 py-2 text-left">Portal</th>
+                <th className="px-3 py-2 text-left">Month</th>
+                <th className="px-3 py-2 text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {!loading && portals.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center opacity-70">
-                    No results yet.
+              {spendRows.map((row) => (
+                <tr key={row.id} className="border-t border-gray-800">
+                  <td className="px-3 py-2">{row.portal}</td>
+                  <td className="px-3 py-2">{row.month}</td>
+                  <td className="px-3 py-2 text-right">
+                    {row.amount.toLocaleString('fr-FR')} €
                   </td>
-                </tr>
-              )}
-              {portals.map((p, i) => (
-                <tr key={`${p.url}-${i}`} className={i % 2 ? 'bg-white/[0.02]' : ''}>
-                  <td className="py-2 px-4">{p.country}</td>
-                  <td className="py-2 px-4">
-                    <a href={p.url} className="underline hover:no-underline" target="_blank" rel="noreferrer">
-                      {p.name}
-                    </a>
-                  </td>
-                  <td className="py-2 px-4">{p.type}</td>
-                  <td className="py-2 px-4 opacity-80">{p.notes ?? ''}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
+}
+
+function TrendCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span className="text-gray-400">—</span>;
+
+  const isBetter = pct < 0;
+  const color = isBetter ? 'text-green-400' : 'text-red-400';
+  const sign = isBetter ? '' : '+';
+
+  return <span className={color}>{sign}{pct.toFixed(1)}%</span>;
 }

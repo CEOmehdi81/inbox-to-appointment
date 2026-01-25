@@ -1,0 +1,15 @@
+#homi-bar {
+    position: fixed; z-index: 2147483647; left: 16px; right: 16px; bottom: 16px;
+    background: #111; color: #fff; border: 1px solid #333; border-radius: 12px;
+    padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    display: flex; align-items: center; gap: 10px; font: 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  #homi-bar .pill { padding: 5px 8px; border-radius: 999px; background: #222; border: 1px solid #333; }
+  #homi-bar button {
+    background: #4f46e5; color: #fff; border: none; border-radius: 8px; padding: 6px 10px;
+    cursor: pointer; font-weight: 600;
+  }
+  #homi-bar button[disabled] { opacity: .55; cursor: default; }
+  #homi-bar .bar-wrap { flex: 1; background: #222; border: 1px solid #333; border-radius: 8px; height: 10px; overflow: hidden; }
+  #homi-bar .bar { height: 100%; width: 0%; background: #16a34a; transition: width .3s ease, background .3s ease; }
+  #homi-bar .status { opacity: .8; }

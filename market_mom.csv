@@ -1,0 +1,4 @@
+country,admin_area,locality,postcode,property_type,ym,n,avg_ppm2,prev_avg_ppm2,pct_change
+FR,Ile-de-France,Paris,75011,apartment,2024-06,1,11556.0,,
+GB,England,London,"SW1A 1AA",terraced,2024-05,1,14211.0,,
+country,admin_area,locality,postcode,property_type,sale_da,1,,,
